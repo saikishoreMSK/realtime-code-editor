@@ -34,8 +34,32 @@ io.on('connection',(socket)=>{
         }
         rooms.get(roomId).add(userName);
         io.to(roomId).emit("userJoined",Array.from(rooms.get(currentRoom)));
-        console.log("user joined", roomId);
+    });
+
+    socket.on("codeChange",({roomId,code})=>{
+        socket.to(roomId).emit("codeUpdate",code)
+    });
+
+    socket.on("leaveRoom",()=>{
+        if(currentRoom&&currentUser){
+            rooms.get(currentRoom).delete(currentUser);
+            io.to(currentRoom).emit("userJoined",Array.from(rooms.get(currentRoom)));
+
+            socket.leave(currentRoom);
+
+            currentRoom=null;
+            currentUser=null;
+        }
     })
+
+    socket.on("disconnect",()=>{
+        if(currentRoom&&currentUser){
+            rooms.get(currentRoom).delete(currentUser);
+            io.to(currentRoom).emit("userJoined",Array.from(rooms.get(currentRoom)));
+        }
+        console.log("user disconneted")
+    })
+
 });
 
 const port = process.env.PORT || 5000;
