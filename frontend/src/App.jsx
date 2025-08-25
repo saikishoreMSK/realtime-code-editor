@@ -1,6 +1,6 @@
 import './App.css'
 import io from 'socket.io-client';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Editor from '@monaco-editor/react';
 
 const socket = io('http://localhost:5000');
@@ -12,6 +12,32 @@ const App = () => {
   const [language, setLanguage] = useState("javascript");
   const [code,setCode] = useState("");
   const [copySuccess,setCopySuccess] = useState("") 
+  const [users,setUsers] = useState([]);
+
+  useEffect(()=>{
+    socket.on("userJoined",(users)=>{
+      setUsers(users);
+    })
+    socket.on("codeUpdate",(newCode)=>{
+      setCode(newCode);
+    })
+    return()=>{
+      socket.off("userJoined");
+      socket.off("codeUpdate");
+    }
+  },[])
+
+  useEffect(()=>{
+    const handleBeforeUnload =()=>{
+      socket.emit("leaveRoom");
+    };
+
+    window.addEventListener("beforeunload",handleBeforeUnload);
+
+    return ()=>{
+      window.removeEventListener("beforeunload",handleBeforeUnload);
+    }
+  },[])
 
   const joinRoom = () =>{
     if(roomId&&userName){
@@ -26,6 +52,7 @@ const App = () => {
   }
   const handleCodeChange = (newCode)=>{
     setCode(newCode);
+    socket.emit("codeChange",{roomId,code: newCode});
   }
 
   if(!Joined) {
@@ -48,8 +75,9 @@ const App = () => {
         </div>
         <h3>Users in Room:</h3>
         <ul>
-          <li>Kishore</li>
-          <li>Vishnu</li>
+          {users.map((user,index)=>(
+            <li key={index}>{user.slice(0,8)}...</li>
+          ))}
         </ul>
         <p className='typing-indicator'>user typing...</p>
         <select className='language-selector' value={language} onChange={e=>setLanguage(e.target.value)}>
