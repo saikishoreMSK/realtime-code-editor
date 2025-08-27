@@ -54,6 +54,14 @@ const App = () => {
       setJoined(true);
     }
   }
+  const leaveRoom = () =>{
+    socket.emit("leaveRoom");
+    setJoined(false);
+    setRoomId("");
+    setUserName("");
+    setCode("");
+    setLanguage("javascript");
+  }
   const copyRoomId = () =>{
     navigator.clipboard.writeText(roomId)
     setCopySuccess("Copied")
@@ -102,7 +110,7 @@ const App = () => {
           <option value={"java"}>Java</option>
           <option value={"cpp"}>C++</option>
         </select>
-        <button className='leave-button'>Leave Room</button>
+        <button className='leave-button' onClick={leaveRoom}>Leave Room</button>
       </div>
       <div className='editor-wrapper'>
         <Editor 
