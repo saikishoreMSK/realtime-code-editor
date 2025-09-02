@@ -1,6 +1,11 @@
 import express from 'express';
 import http from 'http';
+import { version } from 'os';
 import { Server } from 'socket.io';
+import axios from 'axios';
+import { resolveNaptr } from 'dns';
+import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
 const server = http.createServer(app);
@@ -60,6 +65,26 @@ io.on('connection',(socket)=>{
         io.to(roomId).emit("languageUpdate",language);
     })
 
+    socket.on("compileCode",async ({code,roomId,language,version})=>{
+        if(rooms.has(roomId)){
+            const room = rooms.get(roomId);
+            const response = await axios.post(
+                "https://emkc.org/api/v2/piston/execute",
+                {
+                    language,
+                    version,
+                    files:[
+                        {
+                            content: code,
+                        },
+                    ],
+                }
+            );
+            room.output = response.data.run.output;
+            io.to(roomId).emit("codeResponse",response.data);
+        }
+    })
+
     socket.on("disconnect",()=>{
         if(currentRoom&&currentUser){
             rooms.get(currentRoom).delete(currentUser);
@@ -71,6 +96,20 @@ io.on('connection',(socket)=>{
 });
 
 const port = process.env.PORT || 5000;
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+
+app.use(express.static(path.join(__dirname, "frontend", "dist")));
+
+// Must come after other routes
+app.get(/.*/, (req, res) => {
+    res.sendFile(path.resolve(__dirname, "frontend", "dist", "index.html"));
+});
+
+
+
 server.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
