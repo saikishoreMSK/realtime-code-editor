@@ -7,11 +7,11 @@
   "scripts": {
     "start": "node backend/index.js",
     "dev": "nodemon backend/index.js",
-    "build": "tsc"
-    
+    "build": "npm install && cd frontend && npm install && npm run"
   },
   "dependencies": {
     "-": "^0.0.1",
+    "axios": "^1.11.0",
     "express": "^5.1.0",
     "socket.io": "^4.8.1"
   },
