@@ -26,8 +26,8 @@ io.on('connection',(socket)=>{
     socket.on('join',({roomId, userName})=>{
         if(currentRoom){
             socket.leave(currentRoom);
-            rooms.get(currentRoom).delete(currentUser);
-            io.to(currentRoom).emit("userJoined",Array.from(rooms.get(currentRoom)));
+            rooms.get(currentRoom).users.delete(currentUser);
+            io.to(currentRoom).emit("userJoined",Array.from(rooms.get(currentRoom).users));
         }
         currentRoom = roomId;
         currentUser = userName;
@@ -35,20 +35,24 @@ io.on('connection',(socket)=>{
         socket.join(roomId);
 
         if(!rooms.has(roomId)){
-            rooms.set(roomId,new Set());
+            rooms.set(roomId,{users: new Set(),code: "// code starts here..."});
         }
-        rooms.get(roomId).add(userName);
-        io.to(roomId).emit("userJoined",Array.from(rooms.get(currentRoom)));
+        rooms.get(roomId).users.add(userName);
+        socket.emit("codeUpdate",rooms.get(roomId).code);
+        io.to(roomId).emit("userJoined",Array.from(rooms.get(currentRoom).users));
     });
 
     socket.on("codeChange",({roomId,code})=>{
+        if(rooms.has(roomId)){
+            rooms.get(roomId).code = code;
+        }
         socket.to(roomId).emit("codeUpdate",code)
     });
 
     socket.on("leaveRoom",()=>{
         if(currentRoom&&currentUser){
-            rooms.get(currentRoom).delete(currentUser);
-            io.to(currentRoom).emit("userJoined",Array.from(rooms.get(currentRoom)));
+            rooms.get(currentRoom).users.delete(currentUser);
+            io.to(currentRoom).emit("userJoined",Array.from(rooms.get(currentRoom).users));
 
             socket.leave(currentRoom);
 
@@ -87,8 +91,8 @@ io.on('connection',(socket)=>{
 
     socket.on("disconnect",()=>{
         if(currentRoom&&currentUser){
-            rooms.get(currentRoom).delete(currentUser);
-            io.to(currentRoom).emit("userJoined",Array.from(rooms.get(currentRoom)));
+            rooms.get(currentRoom).users.delete(currentUser);
+            io.to(currentRoom).emit("userJoined",Array.from(rooms.get(currentRoom).users));
         }
         console.log("user disconneted.")
     })
@@ -107,8 +111,6 @@ app.use(express.static(path.join(__dirname, "frontend", "dist")));
 app.get(/.*/, (req, res) => {
     res.sendFile(path.resolve(__dirname, "frontend", "dist", "index.html"));
 });
-
-
 
 server.listen(port, () => {
   console.log(`Server is running on port ${port}`);
