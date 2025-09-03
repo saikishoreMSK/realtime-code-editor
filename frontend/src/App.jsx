@@ -87,8 +87,10 @@ const App = () => {
     socket.emit("languageChange",{roomId,language:newLanguage});
   }
 
+  const [userInput,setUserInput] = useState("");
+
   const runCode = () =>{
-    socket.emit("compileCode",{code,roomId,language,version});
+    socket.emit("compileCode",{code,roomId,language,version,input:userInput});
   }
 
   if(!Joined) {
@@ -137,6 +139,10 @@ const App = () => {
           fontSize: 14
         }}
         />
+        <textarea className='input-console' value={userInput} 
+        onChange={(e)=>setUserInput(e.target.value)} 
+        placeholder='Enter Input here'/>
+
         <button className='run-btn' onClick={runCode}>Execute</button>
         <textarea className='output-console' value={outPut} readOnly 
         placeholder='Output will display here...'></textarea>

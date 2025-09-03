@@ -69,7 +69,7 @@ io.on('connection',(socket)=>{
         io.to(roomId).emit("languageUpdate",language);
     })
 
-    socket.on("compileCode",async ({code,roomId,language,version})=>{
+    socket.on("compileCode",async ({code,roomId,language,version,input})=>{
         if(rooms.has(roomId)){
             const room = rooms.get(roomId);
             const response = await axios.post(
@@ -82,6 +82,7 @@ io.on('connection',(socket)=>{
                             content: code,
                         },
                     ],
+                    stdin:input,
                 }
             );
             room.output = response.data.run.output;
