@@ -2,6 +2,7 @@ import './App.css'
 import io from 'socket.io-client';
 import React, { useEffect, useState } from 'react';
 import Editor from '@monaco-editor/react';
+import { snippets } from './components/snippets';
 
 const socket = io('http://localhost:5000');
 
@@ -81,11 +82,18 @@ const App = () => {
     socket.emit("typing",{roomId,userName});
   }
 
-  const handleLanguageChange = (e) => {
-    const newLanguage = e.target.value;
-    setLanguage(newLanguage);
-    socket.emit("languageChange",{roomId,language:newLanguage});
-  }
+const handleLanguageChange = (e) => { 
+  const newLanguage = e.target.value;
+  setLanguage(newLanguage);
+
+  // Always load snippet for new language
+  const newCode = snippets[newLanguage] || "javascript";
+  setCode(newCode);
+
+  // Send updates to other clients
+  socket.emit("languageChange", { roomId, language: newLanguage });
+  socket.emit("codeChange", { roomId, code: newCode });
+};
 
   const [userInput,setUserInput] = useState("");
 
@@ -118,11 +126,15 @@ const App = () => {
           ))}
         </ul>
         <p className='typing-indicator'>{typing}</p>
-        <select className='language-selector' value={language} onChange={handleLanguageChange}>
-          <option value={"javascript"}>JavaScript</option>
-          <option value={"python"}>Python</option>
-          <option value={"java"}>Java</option>
-          <option value={"cpp"}>C++</option>
+        <select 
+          className='language-selector' 
+          value={language} 
+          onChange={handleLanguageChange}
+        >
+          <option value="javascript">JavaScript</option>
+          <option value="python">Python</option>
+          <option value="java">Java</option>
+          <option value="cpp">C++</option>
         </select>
         <button className='leave-button' onClick={leaveRoom}>Leave Room</button>
       </div>
