@@ -23,24 +23,43 @@ io.on('connection',(socket)=>{
     let currentRoom = null;
     let currentUser = null;
 
-    socket.on('join',({roomId, userName})=>{
-        if(currentRoom){
-            socket.leave(currentRoom);
-            rooms.get(currentRoom).users.delete(currentUser);
-            io.to(currentRoom).emit("userJoined",Array.from(rooms.get(currentRoom).users));
-        }
-        currentRoom = roomId;
-        currentUser = userName;
+    // inside io.on("connection", (socket) => { ... })
 
-        socket.join(roomId);
+socket.on('join', ({ roomId, userName, password }) => {
+    if (currentRoom) {
+        socket.leave(currentRoom);
+        rooms.get(currentRoom).users.delete(currentUser);
+        io.to(currentRoom).emit("userJoined", Array.from(rooms.get(currentRoom).users));
+    }
 
-        if(!rooms.has(roomId)){
-            rooms.set(roomId,{users: new Set(),code: "console.log('Hello World')"});
-        }
-        rooms.get(roomId).users.add(userName);
-        socket.emit("codeUpdate",rooms.get(roomId).code);
-        io.to(roomId).emit("userJoined",Array.from(rooms.get(currentRoom).users));
-    });
+    // if room does not exist, create with password
+    if (!rooms.has(roomId)) {
+        rooms.set(roomId, { 
+            users: new Set(), 
+            code: "console.log('Hello World');", 
+            password: password || null 
+        });
+    }
+
+    const room = rooms.get(roomId);
+
+    // if room has password and it doesn't match
+    if (room.password && room.password !== password) {
+        socket.emit("joinError", "Invalid room password ❌");
+        return;
+    }
+
+    // store user info
+    currentRoom = roomId;
+    currentUser = userName;
+
+    socket.join(roomId);
+    room.users.add(userName);
+
+    socket.emit("codeUpdate", room.code);
+    io.to(roomId).emit("userJoined", Array.from(room.users));
+});
+
 
     socket.on("codeChange",({roomId,code})=>{
         if(rooms.has(roomId)){

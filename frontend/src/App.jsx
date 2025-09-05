@@ -18,18 +18,25 @@ const App = () => {
   const [outPut,setOutPut] = useState("");
   // eslint-disable-next-line no-unused-vars
   const [version,setVersion]= useState("*");
+  // For code persistence across the languages
   const [languageCodes, setLanguageCodes] = useState({
   javascript: snippets.javascript,
   python: snippets.python,
   java: snippets.java,
   cpp: snippets.cpp,
 });
+const [roomPassword, setRoomPassword] = useState("");
+const [joinError, setJoinError] = useState("");
 
 
   useEffect(()=>{
     socket.on("userJoined",(users)=>{
       setUsers(users);
     })
+    socket.on("joinError", (msg) => {
+    setJoinError(msg);
+    setJoined(false);
+  });
     socket.on("codeUpdate",(newCode)=>{
       setCode(newCode);
     })
@@ -46,7 +53,11 @@ const App = () => {
     })
     return()=>{
       socket.off("userJoined");
-      socket.off("codeUpdate");
+      socket.off("joinError");
+      socket.on("codeUpdate", (newCode) => {
+          setCode(newCode);
+          setJoined(true);
+        });
       socket.off("userTyping");
       socket.off("codeResponse");
     }
@@ -64,12 +75,13 @@ const App = () => {
     }
   },[])
 
-  const joinRoom = () =>{
-    if(roomId&&userName){
-      socket.emit('join',{roomId,userName});
-      setJoined(true);
+  // joinRoom function
+  const joinRoom = () => {
+    if (roomId && userName) {
+      socket.emit("join", { roomId, userName, password: roomPassword });
+      
     }
-  }
+  };
   const leaveRoom = () =>{
     socket.emit("leaveRoom");
     setJoined(false);
@@ -124,11 +136,17 @@ const App = () => {
   if(!Joined) {
     return <div className='join-container '>
       <div className='join-form'>
-        <h1>Join Code Room</h1>
-        <input type='text' placeholder='Room Id' value={roomId} onChange={(e)=>setRoomId(e.target.value)}/>
-        <input type='text' placeholder='Your Name' value={userName} onChange={(e)=> setUserName(e.target.value)}/>
-        <button onClick={joinRoom}>Join Room</button>
-      </div>
+  <h1>Join Code Room</h1>
+  <input type='text' placeholder='Room Id' value={roomId} onChange={(e)=>setRoomId(e.target.value)}
+  />
+  <input type='text' placeholder='Your Name' value={userName} onChange={(e)=> setUserName(e.target.value)}
+  />
+  <input type='password' placeholder='Room Password (optional)' value={roomPassword} onChange={(e)=> setRoomPassword(e.target.value)}
+  />
+  <button onClick={joinRoom}>Join Room</button>
+  {joinError && <p className="error">{joinError}</p>}
+</div>
+
     </div>
   }
   return (
