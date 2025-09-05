@@ -152,6 +152,12 @@ body {
   color: #ddd;
   margin-top: 10px;
 }
+.remote-cursor {
+  border-left: 2px solid red; /* visible caret */
+  margin-left: -1px;
+  height: 1em !important;
+}
+
 
 /* Language dropdown */
 .editor-container .sidebar .language-selector {

@@ -84,6 +84,11 @@ socket.on('join', ({ roomId, userName, password }) => {
         socket.to(roomId).emit("userTyping",userName);
     })
 
+    socket.on("cursorChange", ({ roomId, userName, position }) => {
+        socket.to(roomId).emit("cursorUpdate", { userName, position });
+    });
+
+
     socket.on("languageChange",({roomId,language})=>{
         io.to(roomId).emit("languageUpdate",language);
     })
