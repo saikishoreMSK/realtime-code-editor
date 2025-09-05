@@ -1,6 +1,6 @@
 import './App.css'
 import io from 'socket.io-client';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { snippets } from './components/snippets';
 
@@ -15,9 +15,13 @@ const App = () => {
   const [copySuccess,setCopySuccess] = useState("") 
   const [users,setUsers] = useState([]);
   const [typing,setTyping] = useState("");
+  const [cursors, setCursors] = useState({});
+  const editorRef = useRef(null);
   const [outPut,setOutPut] = useState("");
   // eslint-disable-next-line no-unused-vars
   const [version,setVersion]= useState("*");
+  const cursorDecorationsRef = useRef({});
+  
   // For code persistence across the languages
   const [languageCodes, setLanguageCodes] = useState({
   javascript: snippets.javascript,
@@ -44,6 +48,10 @@ const [joinError, setJoinError] = useState("");
       setTyping(`${user.slice(0,8)}... is Typing`);
       setTimeout(()=>setTyping(""),2000);
     })
+    socket.on("cursorUpdate", ({ userName, position }) => {
+    setCursors(prev => ({...prev,[userName]: position,
+      }));
+    });
     socket.on("languageUpdate",(newLanguage)=>{
       setLanguage(newLanguage);
     })
@@ -59,6 +67,7 @@ const [joinError, setJoinError] = useState("");
           setJoined(true);
         });
       socket.off("userTyping");
+      socket.off("cursorUpdate");
       socket.off("codeResponse");
     }
   },[])
@@ -74,6 +83,37 @@ const [joinError, setJoinError] = useState("");
       window.removeEventListener("beforeunload",handleBeforeUnload);
     }
   },[])
+  useEffect(() => {
+    if (!editorRef.current) return;
+
+    Object.entries(cursors).forEach(([name, pos]) => {
+      if (name === userName) return; // don't show your own cursor
+
+      // Clear old decorations for this user
+      const oldDecorations = cursorDecorationsRef.current[name] || [];
+
+      // Apply new decoration
+      const newDecorations = editorRef.current.deltaDecorations(oldDecorations, [
+        {
+          range: new window.monaco.Range(
+            pos.lineNumber,
+            pos.column,
+            pos.lineNumber,
+            pos.column
+          ),
+          options: {
+            className: "remote-cursor",
+            hoverMessage: { value: `${name}'s cursor` }, // ✅ name tooltip
+          },
+        },
+      ]);
+
+      // Save for cleanup next time
+      cursorDecorationsRef.current[name] = newDecorations;
+    });
+  }, [cursors, userName]);
+
+
 
   // joinRoom function
   const joinRoom = () => {
@@ -95,6 +135,17 @@ const [joinError, setJoinError] = useState("");
     setCopySuccess("Copied")
     setTimeout(()=>setCopySuccess(""),2000);
   }
+  
+  const handleCursorChange = (e) => {
+    if (e && e.position) {
+      socket.emit("cursorChange", {roomId,userName,position: e.position,});
+    }
+  };
+  const handleEditorDidMount = (editor) => {
+    editorRef.current = editor;
+    editor.onDidChangeCursorPosition(handleCursorChange);
+  };
+
   const handleCodeChange = (newCode) => {
   setCode(newCode);
   setLanguageCodes(prev => ({
@@ -187,7 +238,7 @@ const [joinError, setJoinError] = useState("");
         options={{
           minimap:{enabled: false},
           fontSize: 14
-        }}
+        }} onMount={handleEditorDidMount}
         />
         <textarea className='input-console' value={userInput} 
         onChange={(e)=>setUserInput(e.target.value)} 
