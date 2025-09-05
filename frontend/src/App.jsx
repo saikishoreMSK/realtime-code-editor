@@ -18,6 +18,13 @@ const App = () => {
   const [outPut,setOutPut] = useState("");
   // eslint-disable-next-line no-unused-vars
   const [version,setVersion]= useState("*");
+  const [languageCodes, setLanguageCodes] = useState({
+  javascript: snippets.javascript,
+  python: snippets.python,
+  java: snippets.java,
+  cpp: snippets.cpp,
+});
+
 
   useEffect(()=>{
     socket.on("userJoined",(users)=>{
@@ -76,24 +83,37 @@ const App = () => {
     setCopySuccess("Copied")
     setTimeout(()=>setCopySuccess(""),2000);
   }
-  const handleCodeChange = (newCode)=>{
-    setCode(newCode);
-    socket.emit("codeChange",{roomId,code: newCode});
-    socket.emit("typing",{roomId,userName});
-  }
-
-const handleLanguageChange = (e) => { 
-  const newLanguage = e.target.value;
-  setLanguage(newLanguage);
-
-  // Always load snippet for new language
-  const newCode = snippets[newLanguage] || "javascript";
+  const handleCodeChange = (newCode) => {
   setCode(newCode);
-
-  // Send updates to other clients
-  socket.emit("languageChange", { roomId, language: newLanguage });
+  setLanguageCodes(prev => ({
+    ...prev,
+    [language]: newCode, // update current language’s slot
+  }));
   socket.emit("codeChange", { roomId, code: newCode });
+  socket.emit("typing", { roomId, userName });
 };
+
+    
+  const handleLanguageChange = (e) => {
+    const newLanguage = e.target.value;
+
+    // Save current code into current language slot
+    setLanguageCodes(prev => ({
+      ...prev,
+      [language]: code, // save the old code
+    }));
+
+    // Load code for the new language
+    const newCode = languageCodes[newLanguage] || snippets[newLanguage];
+
+    setLanguage(newLanguage);
+    setCode(newCode);
+
+    // broadcast changes
+    socket.emit("languageChange", { roomId, language: newLanguage });
+    socket.emit("codeChange", { roomId, code: newCode });
+  };
+
 
   const [userInput,setUserInput] = useState("");
 
