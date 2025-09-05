@@ -35,7 +35,7 @@ io.on('connection',(socket)=>{
         socket.join(roomId);
 
         if(!rooms.has(roomId)){
-            rooms.set(roomId,{users: new Set(),code: "// code starts here..."});
+            rooms.set(roomId,{users: new Set(),code: "console.log('Hello World')"});
         }
         rooms.get(roomId).users.add(userName);
         socket.emit("codeUpdate",rooms.get(roomId).code);
