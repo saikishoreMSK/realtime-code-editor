@@ -129,14 +129,16 @@ const port = process.env.PORT || 5000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Go up one directory to reach the project root
+const frontendDistPath = path.join(__dirname, "..", "frontend", "dist");
 
-app.use(express.static(path.join(__dirname, "frontend", "dist")));
+app.use(express.static(frontendDistPath));
 
-// Must come after other routes
 app.get(/.*/, (req, res) => {
-    res.sendFile(path.resolve(__dirname, "frontend", "dist", "index.html"));
+    res.sendFile(path.resolve(frontendDistPath, "index.html"));
 });
 
 server.listen(port, () => {
   console.log(`Server is running on port ${port}`);
+  
 });

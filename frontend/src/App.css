@@ -153,7 +153,7 @@ body {
   margin-top: 10px;
 }
 .remote-cursor {
-  border-left: 2px solid red; /* visible caret */
+  border-left: 2px solid rgb(0, 238, 255);
   margin-left: -1px;
   height: 1em !important;
 }
