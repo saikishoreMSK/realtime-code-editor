@@ -11,7 +11,12 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server,{
     cors: {
-        origin: '*',
+        origin: '*',fix: resolve frontend build issues and update package.json scripts
+
+- Deleted outdated frontend/dist and rebuilt with latest code
+- Updated package.json scripts for clarity and reliability
+- Ensured backend serves latest frontend build correctly
+- Cleaned up dependencies and improved
     },
 }
 );
@@ -126,16 +131,12 @@ socket.on('join', ({ roomId, userName, password }) => {
 
 const port = process.env.PORT || 5000;
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.resolve();
 
-// Go up one directory to reach the project root
-const frontendDistPath = path.join(__dirname, "..", "frontend", "dist");
+app.use(express.static(path.join(__dirname, "/frontend/dist")));
 
-app.use(express.static(frontendDistPath));
-
-app.get(/.*/, (req, res) => {
-    res.sendFile(path.resolve(frontendDistPath, "index.html"));
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "frontend", "dist", "index.html"));
 });
 
 server.listen(port, () => {
