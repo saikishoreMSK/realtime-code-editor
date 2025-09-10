@@ -11,12 +11,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server,{
     cors: {
-        origin: '*',fix: resolve frontend build issues and update package.json scripts
-
-- Deleted outdated frontend/dist and rebuilt with latest code
-- Updated package.json scripts for clarity and reliability
-- Ensured backend serves latest frontend build correctly
-- Cleaned up dependencies and improved
+        origin: '*',
     },
 }
 );
