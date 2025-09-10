@@ -1,21 +1,24 @@
 {
-  "name": "realtime-code-editor",
+  "name": "reltime-code",
   "version": "1.0.0",
-  "description": "A real-time collaborative code editor",
+  "description": "",
   "main": "index.js",
   "type": "module",
   "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node backend/index.js",
     "dev": "nodemon backend/index.js",
     "build": "npm install && cd frontend && npm install && npm run build"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "-": "^0.0.1",
-    "axios": "^1.11.0",
-    "express": "^5.1.0",
-    "socket.io": "^4.8.1"
+    "axios": "^1.7.7",
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "nodemon": "^3.1.4"
   }
 }
