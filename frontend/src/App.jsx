@@ -62,10 +62,7 @@ const [joinError, setJoinError] = useState("");
     return()=>{
       socket.off("userJoined");
       socket.off("joinError");
-      socket.on("codeUpdate", (newCode) => {
-          setCode(newCode);
-          setJoined(true);
-        });
+      socket.off("codeUpdate");
       socket.off("userTyping");
       socket.off("cursorUpdate");
       socket.off("codeResponse");
