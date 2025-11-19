@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { snippets } from './components/snippets';
 
-const socket = io("http://localhost:5000");
+const socket = io("https://realtime-code-editor-65ch.vercel.app/");
 
 const App = () => {
   const [Joined, setJoined] = useState(false);
