@@ -4,8 +4,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { snippets } from './components/snippets';
 
-//const socket = io("https://realtime-code-editor-65ch.vercel.app/");
-const socket = io("http://localhost:5000");
+const socket = io();
 
 const App = () => {
   const [Joined, setJoined] = useState(false);
@@ -19,6 +18,7 @@ const App = () => {
   const [cursors, setCursors] = useState({});
   const editorRef = useRef(null);
   const [outPut,setOutPut] = useState("");
+  const [isExecuting, setIsExecuting] = useState(false);
   // eslint-disable-next-line no-unused-vars
   const [version,setVersion]= useState("*");
   const cursorDecorationsRef = useRef({});
@@ -59,6 +59,7 @@ const [joinError, setJoinError] = useState("");
     
     socket.on("codeResponse",(response)=>{
       setOutPut(response.run.output);
+      setIsExecuting(false);
     })
     return()=>{
       socket.off("userJoined");
@@ -116,7 +117,9 @@ const [joinError, setJoinError] = useState("");
   // joinRoom function
   const joinRoom = () => {
     if (roomId && userName) {
+      setJoinError("");
       socket.emit("join", { roomId, userName, password: roomPassword });
+      setJoined(true);
       
     }
   };
@@ -179,6 +182,8 @@ const [joinError, setJoinError] = useState("");
   const [userInput,setUserInput] = useState("");
 
   const runCode = () =>{
+    setIsExecuting(true);
+    setOutPut("Executing...");
     socket.emit("compileCode",{code,roomId,language,version,input:userInput});
   }
 
@@ -242,7 +247,7 @@ const [joinError, setJoinError] = useState("");
         onChange={(e)=>setUserInput(e.target.value)} 
         placeholder='Enter Input here'/>
 
-        <button className='run-btn' onClick={runCode}>Execute</button>
+        <button className='run-btn' onClick={runCode} disabled={isExecuting}>{isExecuting ? 'Executing...' : 'Execute'}</button>
         <textarea className='output-console' value={outPut} readOnly 
         placeholder='Output will display here...'></textarea>
       </div>

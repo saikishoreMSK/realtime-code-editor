@@ -1,12 +1,14 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+// Corporate networks intercept TLS with their own CA, which Node doesn't trust.
+// Only relax verification in local dev — never in production.
+if (process.env.NODE_ENV !== 'production') {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
+
 import express from 'express';
 import http from 'http';
-import { version } from 'os';
 import { Server } from 'socket.io';
 import axios from 'axios';
-import { resolveNaptr } from 'dns';
 import path from "path";
-import { fileURLToPath } from "url";
 
 const app = express();
 const server = http.createServer(app);
@@ -17,6 +19,14 @@ const io = new Server(server,{
 }
 );
 const rooms = new Map();
+
+// Wandbox compiler ids for the languages exposed in the frontend selector
+const WANDBOX_COMPILERS = {
+    javascript: { compiler: "nodejs-20.17.0" },
+    python: { compiler: "cpython-3.13.8" },
+    java: { compiler: "openjdk-jdk-21+35" },
+    cpp: { compiler: "gcc-13.2.0", options: "warning,gnu++17" },
+};
 
 io.on('connection',(socket)=>{
     console.log("User connected:", socket.id);
@@ -94,24 +104,42 @@ socket.on('join', ({ roomId, userName, password }) => {
         io.to(roomId).emit("languageUpdate",language);
     })
 
-    socket.on("compileCode",async ({code,roomId,language,version,input})=>{
-        if(rooms.has(roomId)){
-            const room = rooms.get(roomId);
+    // Wandbox pins its own runtime versions, so the client's `version` is ignored.
+    socket.on("compileCode",async ({code,roomId,language,input})=>{
+        if(!rooms.has(roomId)) return;
+        const room = rooms.get(roomId);
+
+        const sendOutput = (output) => {
+            room.output = output;
+            io.to(roomId).emit("codeResponse", { run: { output } });
+        };
+
+        const target = WANDBOX_COMPILERS[language];
+        if(!target){
+            sendOutput(`Unsupported language: ${language}`);
+            return;
+        }
+
+        try{
             const response = await axios.post(
-                "https://emkc.org/api/v2/piston/execute",
+                "https://wandbox.org/api/compile.json",
                 {
-                    language,
-                    version,
-                    files:[
-                        {
-                            content: code,
-                        },
-                    ],
-                    stdin:input,
-                }
+                    code,
+                    compiler: target.compiler,
+                    options: target.options || "",
+                    stdin: input || "",
+                },
+                { timeout: 30000 }
             );
-            room.output = response.data.run.output;
-            io.to(roomId).emit("codeResponse",response.data);
+
+            const d = response.data;
+            // Compile errors live in compiler_error; runtime output in program_output/error.
+            const output = [d.compiler_error, d.program_output, d.program_error]
+                .filter(Boolean).join("").trim();
+            sendOutput(output || "(no output)");
+        }catch(err){
+            console.error("Compile failed:", err.response?.status, err.message);
+            sendOutput(`Execution failed: ${err.message}`);
         }
     })
 
