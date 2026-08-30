@@ -219,3 +219,53 @@ body {
   font-size: 20px;
   height: 200px;
 }
+
+/* --- Remote presence (y-monaco) ---------------------------------------------
+   y-monaco emits per-client class names like .yRemoteSelection-<clientId>; the
+   colours themselves are injected at runtime from awareness state in App.jsx.
+   These rules only handle geometry and the name label. */
+
+.yRemoteSelection {
+  border-radius: 2px;
+}
+
+.yRemoteSelectionHead {
+  position: absolute;
+  box-sizing: border-box;
+  height: 100%;
+  border-left: 2px solid #f97316;
+}
+
+.yRemoteSelectionHead::after {
+  position: absolute;
+  top: -1.35em;
+  left: -2px;
+  padding: 1px 5px;
+  border-radius: 3px 3px 3px 0;
+  font-size: 11px;
+  font-family: sans-serif;
+  line-height: normal;
+  white-space: nowrap;
+  color: #fff;
+  pointer-events: none;
+  /* Labels sit above the text but must not swallow clicks. */
+  z-index: 10;
+}
+
+.user-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+.connection-status {
+  margin: 4px 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #7c2d12;
+  color: #fed7aa;
+  font-size: 12px;
+}

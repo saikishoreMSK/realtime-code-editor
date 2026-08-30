@@ -5,9 +5,9 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node backend/index.js",
-    "dev": "nodemon backend/index.js",
+    "test": "node --test \"test/**/*.mjs\"",
+    "start": "node --env-file-if-exists=.env backend/index.js",
+    "dev": "nodemon --exec \"node --env-file-if-exists=.env\" backend/index.js",
     "build": "npm install --include=dev && cd frontend && npm install --include=dev && npm run build"
   },
   "keywords": [],
@@ -18,10 +18,14 @@
   },
   "dependencies": {
     "axios": "^1.7.7",
+    "bcryptjs": "^3.0.3",
     "express": "^4.19.2",
-    "socket.io": "^4.7.5"
+    "socket.io": "^4.7.5",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.32"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "nodemon": "^3.1.4",
+    "socket.io-client": "^4.8.3"
   }
 }

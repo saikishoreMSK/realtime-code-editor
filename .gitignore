@@ -47,3 +47,5 @@ temp/
 *.eslintcache
 
 dist/
+# Persisted room snapshots
+data/
