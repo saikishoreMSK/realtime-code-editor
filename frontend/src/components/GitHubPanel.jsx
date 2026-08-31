@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import FileTree from './FileTree';
+import InfoPopover from './InfoPopover';
 import {
     MAX_IMPORT_BYTES,
     createBranch,
@@ -193,16 +194,48 @@ const GitHubPanel = ({ onOpenFile, getCode, disabled }) => {
 
             {expanded && (
                 <div className='gh-body'>
-                    <input
-                        type='password'
-                        placeholder='Personal access token (optional)'
-                        value={token}
-                        onChange={(e) => rememberToken(e.target.value)}
-                        autoComplete='off'
-                    />
+                    <div className='gh-token-row'>
+                        <input
+                            type='password'
+                            placeholder='Personal access token (optional)'
+                            value={token}
+                            onChange={(e) => rememberToken(e.target.value)}
+                            autoComplete='off'
+                        />
+                        <InfoPopover
+                            title='Creating a token'
+                            label='How to create a GitHub personal access token'
+                        >
+                            <a
+                                className='info-cta'
+                                href='https://github.com/settings/personal-access-tokens/new'
+                                target='_blank'
+                                rel='noopener noreferrer'
+                            >
+                                Open GitHub token settings ↗
+                            </a>
+
+                            <dl className='info-rows'>
+                                <div><dt>Expiration</dt><dd>7 or 30 days</dd></div>
+                                <div><dt>Repository access</dt><dd>Only select repositories</dd></div>
+                                <div><dt>Contents</dt><dd>Read and write</dd></div>
+                                <div><dt>Pull requests</dt><dd>Read and write</dd></div>
+                            </dl>
+
+                            <p>The token is shown once — copy it immediately.</p>
+                            <p>
+                                Use a throwaway repository: committing and opening a pull
+                                request here creates real ones.
+                            </p>
+                            <p>
+                                You don&apos;t need a token to browse public repositories. When
+                                you do paste one it stays in this tab, and is never sent to
+                                this app&apos;s server or shared with the room.
+                            </p>
+                        </InfoPopover>
+                    </div>
                     <p className='gh-hint'>
-                        Stays in this tab only — never sent to this app&apos;s server or shared
-                        with the room. Public repositories can be browsed without one.
+                        Public repositories need no token.
                     </p>
 
                     <input

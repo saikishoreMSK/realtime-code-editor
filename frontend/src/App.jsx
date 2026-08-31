@@ -52,6 +52,7 @@ const App = () => {
   // bind to a locally created Y.Text that the real one then orphans.
   const [synced, setSynced] = useState(false);
   const [connected, setConnected] = useState(socket.connected);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // The CRDT document is rebuilt per room — reusing one across rooms would merge
   // the previous room's content into the new one.
@@ -388,7 +389,9 @@ const App = () => {
 
   return (
     <div className='editor-container'>
-      <aside className='sidebar'>
+      {/* Collapsing hides the zones with CSS rather than unmounting them, so the
+          GitHub panel keeps its token and loaded repository. */}
+      <aside className={sidebarOpen ? 'sidebar' : 'sidebar collapsed'}>
         <div className='sidebar-header'>
           <div className='room-line'>
             <h2 title={roomId}>Room {roomId}</h2>
@@ -398,6 +401,14 @@ const App = () => {
               title='Copy room id'
             >
               {copySuccess ? '✓ Copied' : 'Copy'}
+            </button>
+            <button
+              className='collapse-toggle'
+              onClick={() => setSidebarOpen((open) => !open)}
+              aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+              title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            >
+              {sidebarOpen ? '«' : '»'}
             </button>
           </div>
         </div>
