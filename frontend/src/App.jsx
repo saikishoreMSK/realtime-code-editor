@@ -190,7 +190,7 @@ const App = () => {
     };
 
     const onTyping = (user) => {
-      setTyping(`${user.slice(0, 8)}... is Typing`);
+      setTyping(`${user} is typing…`);
       setTimeout(() => setTyping(""), 2000);
     };
 
@@ -388,69 +388,111 @@ const App = () => {
 
   return (
     <div className='editor-container'>
-      <div className="sidebar">
-        <div className="room-info">
-          <h2>Code Room {roomId}</h2>
-          <button onClick={copyRoomId} className='copy-button'>Copy Id</button>
-          {copySuccess && <span className='copy-success'>{copySuccess}</span>}
+      <aside className='sidebar'>
+        <div className='sidebar-header'>
+          <div className='room-line'>
+            <h2 title={roomId}>Room {roomId}</h2>
+            <button
+              onClick={copyRoomId}
+              className='copy-button'
+              title='Copy room id'
+            >
+              {copySuccess ? '✓ Copied' : 'Copy'}
+            </button>
+          </div>
         </div>
-        <h3>Users in Room:</h3>
-        <ul>
-          {users.map((user, index) => (
-            <li key={index}>
-              <span className='user-dot' style={{ backgroundColor: colorFor(user) }} />
-              {user.slice(0, 8)}...
-            </li>
-          ))}
-        </ul>
-        <p className='typing-indicator'>{typing}</p>
-        {!connected && (
-          <p className='connection-status'>Disconnected — reconnecting…</p>
-        )}
-        {connected && !synced && (
-          <p className='connection-status'>Syncing…</p>
-        )}
-        <select
-          className='language-selector'
-          value={language}
-          onChange={handleLanguageChange}
-        >
-          {LANGUAGES.map(({ id, label }) => (
-            <option key={id} value={id}>{label}</option>
-          ))}
-        </select>
-        <GitHubPanel
-          onOpenFile={importIntoEditor}
-          getCode={readCode}
-          disabled={!synced}
-        />
-        <button className='leave-button' onClick={leaveRoom}>Leave Room</button>
-      </div>
-      <div className='editor-wrapper'>
-        {/* No value/language props: the model is owned by the Yjs binding, and letting
-            the wrapper reset it would fight the CRDT. */}
-        <Editor
-          height={"60%"}
-          defaultLanguage="javascript"
-          defaultValue=""
-          theme='vs-dark'
-          keepCurrentModel
-          options={{
-            minimap: { enabled: false },
-            fontSize: 14
-          }}
-          onMount={handleEditorDidMount}
-        />
-        <textarea className='input-console' value={userInput}
-          onChange={(e) => setUserInput(e.target.value)}
-          placeholder='Enter Input here' />
 
-        <button className='run-btn' onClick={runCode} disabled={isExecuting}>
-          {isExecuting ? 'Executing...' : 'Execute'}
-        </button>
-        <textarea className='output-console' value={outPut} readOnly
-          placeholder='Output will display here...'></textarea>
-      </div>
+        {/* Only this zone scrolls, so the header and Leave Room can never be
+            pushed off-screen by an expanded panel. */}
+        <div className='sidebar-scroll'>
+          {!connected && (
+            <p className='connection-status'>Disconnected — reconnecting…</p>
+          )}
+          {connected && !synced && (
+            <p className='connection-status'>Syncing…</p>
+          )}
+
+          <h3 className='sidebar-title'>Users in room</h3>
+          <ul className='user-list'>
+            {users.map((user, index) => (
+              <li key={`${user}-${index}`}>
+                <span className='user-dot' style={{ backgroundColor: colorFor(user) }} />
+                <span className='user-name'>{user}</span>
+              </li>
+            ))}
+          </ul>
+          <p className='typing-indicator'>{typing}</p>
+
+          <GitHubPanel
+            onOpenFile={importIntoEditor}
+            getCode={readCode}
+            disabled={!synced}
+          />
+        </div>
+
+        <div className='sidebar-footer'>
+          <button className='leave-button' onClick={leaveRoom}>Leave Room</button>
+        </div>
+      </aside>
+
+      <main className='editor-wrapper'>
+        <div className='editor-toolbar'>
+          <select
+            className='language-selector'
+            value={language}
+            onChange={handleLanguageChange}
+          >
+            {LANGUAGES.map(({ id, label }) => (
+              <option key={id} value={id}>{label}</option>
+            ))}
+          </select>
+          <button className='run-btn' onClick={runCode} disabled={isExecuting}>
+            {isExecuting ? 'Executing…' : '▶ Execute'}
+          </button>
+        </div>
+
+        <div className='editor-surface'>
+          {/* No value/language props: the model is owned by the Yjs binding, and
+              letting the wrapper reset it would fight the CRDT. */}
+          <Editor
+            height='100%'
+            defaultLanguage='javascript'
+            defaultValue=''
+            theme='vs-dark'
+            keepCurrentModel
+            options={{
+              minimap: { enabled: false },
+              fontSize: 14,
+              scrollBeyondLastLine: false,
+              // Without this Monaco keeps its first measured size and leaves a dead
+              // gutter whenever the surrounding layout changes.
+              automaticLayout: true,
+            }}
+            onMount={handleEditorDidMount}
+          />
+        </div>
+
+        <div className='console-row'>
+          <label className='console-pane'>
+            <span className='console-label'>stdin</span>
+            <textarea
+              className='input-console'
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              placeholder='Input for your program…'
+            />
+          </label>
+          <label className='console-pane'>
+            <span className='console-label'>Output</span>
+            <textarea
+              className='output-console'
+              value={outPut}
+              readOnly
+              placeholder='Output will appear here…'
+            />
+          </label>
+        </div>
+      </main>
     </div>
   )
 }
