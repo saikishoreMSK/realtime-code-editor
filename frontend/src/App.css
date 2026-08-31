@@ -269,3 +269,142 @@ body {
   color: #fed7aa;
   font-size: 12px;
 }
+
+/* --- GitHub panel ---------------------------------------------------------- */
+
+.gh-panel {
+  margin: 10px 0;
+  border-top: 1px solid #334155;
+  padding-top: 8px;
+}
+
+.gh-toggle {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.gh-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.gh-body input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 7px;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.gh-body button {
+  padding: 5px 8px;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  background: #1e293b;
+  color: #e2e8f0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.gh-body button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.gh-hint {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.gh-busy { margin: 0; color: #93c5fd; font-size: 11px; }
+.gh-error { margin: 0; color: #fca5a5; font-size: 11px; }
+.gh-notice { margin: 0; color: #86efac; font-size: 11px; }
+
+.gh-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid #334155;
+  padding-top: 8px;
+}
+
+.gh-commits {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.gh-commits button {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  color: #cbd5e1;
+  font-size: 11px;
+  padding: 3px 4px;
+  cursor: pointer;
+}
+
+.gh-commits button:hover { background: #1e293b; }
+.gh-commits code { color: #fbbf24; }
+
+/* --- File tree ------------------------------------------------------------ */
+
+.tree-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree-root {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  padding: 4px 0;
+}
+
+.tree-node { margin: 0; }
+
+.tree-dir,
+.tree-file {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  color: #cbd5e1;
+  font-size: 12px;
+  padding: 2px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-dir { color: #93c5fd; font-weight: 500; }
+.tree-caret { display: inline-block; width: 12px; }
+
+.tree-dir:hover,
+.tree-file:hover:not(:disabled) { background: #1e293b; }
+
+.tree-file-disabled { color: #64748b; cursor: default; }
+.tree-file-active { background: #1e3a5f; color: #fff; }
+
+.tree-size { float: right; color: #64748b; font-size: 10px; padding-left: 8px; }

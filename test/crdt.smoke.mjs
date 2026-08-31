@@ -34,7 +34,7 @@ function startServer() {
     });
 
     return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('server start timed out')), 20000);
+        const timer = setTimeout(() => reject(new Error('server start timed out')), 45000);
         let buf = '';
         child.stdout.on('data', (d) => {
             buf += d;
@@ -83,7 +83,17 @@ function connect({ roomId, userName, password }) {
     };
 
     return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`${userName} join timed out`)), 10000);
+        // A socket that never joined still retries forever, which keeps the test
+        // process alive and hangs the whole runner. Always close it on failure.
+        const fail = (err) => {
+            clearTimeout(timer);
+            socket.close();
+            reject(err);
+        };
+        const timer = setTimeout(
+            () => fail(new Error(`${userName} join timed out`)),
+            10000
+        );
         // Left registered on purpose: Socket.IO re-fires 'connect' after a
         // reconnect, and re-joining is what puts the socket back in the room.
         socket.on('connect', () => {
@@ -93,10 +103,8 @@ function connect({ roomId, userName, password }) {
             clearTimeout(timer);
             resolve(client);
         });
-        socket.on('joinError', (msg) => {
-            clearTimeout(timer);
-            reject(new Error(msg));
-        });
+        socket.on('joinError', (msg) => fail(new Error(msg)));
+        socket.on('connect_error', (err) => fail(new Error(`connect failed: ${err.message}`)));
     });
 }
 

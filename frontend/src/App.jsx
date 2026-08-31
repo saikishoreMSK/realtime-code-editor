@@ -10,6 +10,7 @@ import {
   removeAwarenessStates,
 } from 'y-protocols/awareness';
 import { MonacoBinding } from 'y-monaco';
+import GitHubPanel from './components/GitHubPanel';
 
 const socket = io();
 
@@ -327,6 +328,34 @@ const App = () => {
     bindLanguage(language);
   };
 
+  // Replace the active document in one transaction, so the room receives a single
+  // CRDT update rather than a burst, and every participant sees the imported file.
+  const importIntoEditor = useCallback(({ text, language: fileLanguage }) => {
+    const doc = docRef.current;
+    if (!doc) return;
+
+    const target = fileLanguage
+      || doc.ydoc.getMap('meta').get('language')
+      || 'javascript';
+
+    doc.ydoc.transact(() => {
+      doc.ydoc.getMap('meta').set('language', target);
+      const ytext = doc.ydoc.getMap('files').get(target);
+      if (!ytext) return;
+      ytext.delete(0, ytext.length);
+      ytext.insert(0, text);
+    });
+  }, []);
+
+  // Read from the CRDT rather than React state, so a commit always reflects what
+  // the room currently holds.
+  const readCode = useCallback(() => {
+    const doc = docRef.current;
+    if (!doc) return '';
+    const active = doc.ydoc.getMap('meta').get('language') || 'javascript';
+    return doc.ydoc.getMap('files').get(active)?.toString() ?? '';
+  }, []);
+
   const handleLanguageChange = (e) => {
     const next = e.target.value;
     // Writing to the CRDT broadcasts the change; the observer updates local state.
@@ -390,6 +419,11 @@ const App = () => {
             <option key={id} value={id}>{label}</option>
           ))}
         </select>
+        <GitHubPanel
+          onOpenFile={importIntoEditor}
+          getCode={readCode}
+          disabled={!synced}
+        />
         <button className='leave-button' onClick={leaveRoom}>Leave Room</button>
       </div>
       <div className='editor-wrapper'>
