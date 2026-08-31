@@ -254,8 +254,21 @@ body {
   min-height: 0;
 }
 
-.run-btn {
+.console-toggle {
   margin-left: auto;
+  padding: 6px 10px;
+  border: 1px solid #4b2e63;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d8c7e8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.console-toggle:hover { background: rgba(255, 255, 255, 0.18); }
+
+.run-btn {
   padding: 6px 14px;
   border: none;
   border-radius: 6px;
@@ -270,22 +283,32 @@ body {
 .run-btn:hover:not(:disabled) { background-color: #15803d; }
 .run-btn:disabled { opacity: 0.6; cursor: default; }
 
-/* Side by side: stacked, these ate the vertical space the editor needs. */
-.console-row {
+/* Both consoles run the full width, stacked. Safe to stack now that Monaco is
+   on flex: 1 — it absorbs whatever is left instead of claiming a fixed
+   percentage, which is what squeezed the editor before. */
+.console-stack {
   flex-shrink: 0;
   display: flex;
+  flex-direction: column;
   gap: 1px;
-  height: 28%;
-  min-height: 120px;
+  height: 32%;
+  min-height: 170px;
   background: #3b2450;
 }
 
+.console-stack.collapsed { display: none; }
+
 .console-pane {
-  flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
+
+/* stdin is typically one to three lines; output is the pane that needs room, so
+   an even split would waste height on the half that never uses it. */
+.console-pane-input { flex: 0 0 76px; }
+.console-pane-output { flex: 1; }
 
 .console-label {
   flex-shrink: 0;

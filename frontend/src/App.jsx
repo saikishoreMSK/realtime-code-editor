@@ -53,6 +53,7 @@ const App = () => {
   const [synced, setSynced] = useState(false);
   const [connected, setConnected] = useState(socket.connected);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [consoleOpen, setConsoleOpen] = useState(true);
 
   // The CRDT document is rebuilt per room — reusing one across rooms would merge
   // the previous room's content into the new one.
@@ -366,6 +367,8 @@ const App = () => {
 
   const runCode = () => {
     setIsExecuting(true);
+    // Executing with the console collapsed would look like nothing happened.
+    setConsoleOpen(true);
     setOutPut("Executing...");
     // The server runs its own authoritative copy of the code.
     socket.emit("compileCode", { roomId, input: userInput });
@@ -457,6 +460,14 @@ const App = () => {
               <option key={id} value={id}>{label}</option>
             ))}
           </select>
+          <button
+            className='console-toggle'
+            onClick={() => setConsoleOpen((open) => !open)}
+            aria-expanded={consoleOpen}
+            title={consoleOpen ? 'Hide the console' : 'Show the console'}
+          >
+            {consoleOpen ? '▾' : '▸'} Console
+          </button>
           <button className='run-btn' onClick={runCode} disabled={isExecuting}>
             {isExecuting ? 'Executing…' : '▶ Execute'}
           </button>
@@ -483,8 +494,10 @@ const App = () => {
           />
         </div>
 
-        <div className='console-row'>
-          <label className='console-pane'>
+        {/* Hidden with CSS rather than unmounted — cheaper than remounting two
+            textareas on every toggle. */}
+        <div className={consoleOpen ? 'console-stack' : 'console-stack collapsed'}>
+          <label className='console-pane console-pane-input'>
             <span className='console-label'>stdin</span>
             <textarea
               className='input-console'
@@ -493,7 +506,7 @@ const App = () => {
               placeholder='Input for your program…'
             />
           </label>
-          <label className='console-pane'>
+          <label className='console-pane console-pane-output'>
             <span className='console-label'>Output</span>
             <textarea
               className='output-console'
