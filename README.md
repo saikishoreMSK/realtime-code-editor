@@ -13,7 +13,8 @@ A browser-based collaborative code editor where multiple people can write and ru
 - **Persistent rooms** — code survives a server restart or shutdown
 - **Typing indicators** — know who is actively editing
 - **Multi-language execution** — run JavaScript, Python, Java, and C++ with custom stdin
-- **Per-language code persistence** — switching languages preserves what you wrote in each
+- **Multiple files per room** — each file is its own CRDT document, and two people can work in different files at once
+- **Multi-file execution** — sibling files of the same language are compiled alongside the entry file, so includes and imports resolve
 - **GitHub integration** — browse a repository, open a file into the room, commit it back, and open a pull request
 - **Optional room passwords** — protect a room at creation time
 - **Monaco Editor** — the same editor engine that powers VS Code
@@ -53,9 +54,18 @@ rooms: Map<roomId, {
 Each room's document is a `Y.Doc` containing:
 
 ```
-files: Y.Map<string, Y.Text>   // keyed by language; will key by file path later
-meta:  Y.Map                   // { language }
+files: Y.Map<path, Y.Text>   // one document per file
+meta:  Y.Map                 // { schema }
 ```
+
+Which file a user is looking at is deliberately **not** in the document. It is
+per-user state, so two people can edit different files simultaneously. This works
+with y-monaco unchanged: it encodes remote cursors as Yjs *relative positions*,
+which carry the type they belong to, so a cursor from someone in another file
+simply does not resolve against the bound text and is skipped.
+
+The language of a file is derived from its extension rather than stored, so there
+is nothing to keep in sync.
 
 Clients exchange binary CRDT updates rather than whole documents. The server applies
 every update to its own `Y.Doc` — so it stays the authoritative copy, and code
@@ -89,11 +99,21 @@ place, so a crash mid-write cannot corrupt an existing snapshot. Setting
 | `compileCode` / `codeResponse` | both | Execute code, return output |
 | `leaveRoom` | client → server | Leave and update the room |
 
-The active language is stored in the CRDT rather than broadcast separately, so it
-persists with the snapshot and a late joiner receives the right language along with
-the right code.
-
 Code execution is delegated to the [Wandbox](https://wandbox.org) API, which compiles and runs submissions in its own sandbox. No untrusted code executes on this server, and no API key is required.
+
+`compileCode` names the file to run. The server executes its own copy of that file
+and sends every other file of the same language along in Wandbox's `codes` array,
+so `#include "helper.h"`, `import helper` and a second Java class all resolve.
+Wandbox's filesystem is flat, so paths collapse to their basename and the first
+file to claim a name wins.
+
+Output returns only to whoever asked for it. Broadcasting it would let one
+person's run overwrite another's console while they were still reading it, now
+that each user runs their own file.
+
+Snapshots written before multi-file keyed their buffers by language name. They are
+migrated onto paths (`javascript` becomes `main.js`, and so on) on load, stamped
+with a schema version so it happens once.
 
 Wandbox writes every submission to a fixed filename (`prog.java` for Java), which
 `javac` rejects for a `public` class whose name doesn't match. `backend/languages.js`
@@ -220,7 +240,7 @@ where a naive `btoa` implementation corrupts non-ASCII source.
 - **Single instance only.** Room state is held per-process, so running more than one instance would place users in different `Map`s and silently break sync. Horizontal scaling would require the Socket.IO Redis adapter and a shared store.
 - **Snapshots are local to the disk they were written on.** The `fs` adapter is fine for a single instance, but Render's free tier uses an ephemeral disk, so rooms still reset on spin-down there. Swapping in a hosted adapter is a single new file behind the existing interface.
 - **Execution depends on a third-party service.** Wandbox is a free community API with no uptime guarantee. Failures surface in the output console rather than crashing the server.
-- **Single file per language.** A room holds one buffer per language rather than a project tree, so a repository is browsed in full but opened one file at a time.
+- **No file tree yet.** Files are switched from a dropdown in the editor toolbar; creating, renaming and deleting them from the UI is not wired up, and folders exist only implicitly in paths.
 - **Base64 through the contents API.** Files above roughly 1 MB cannot be opened, and binary files are filtered out of the tree.
 - **No rate limiting on execution.** Nothing throttles how often a room can invoke the execution API.
 

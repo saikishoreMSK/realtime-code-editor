@@ -11,15 +11,9 @@ import {
 } from 'y-protocols/awareness';
 import { MonacoBinding } from 'y-monaco';
 import GitHubPanel from './components/GitHubPanel';
+import { languageForPath } from './github';
 
 const socket = io();
-
-const LANGUAGES = [
-  { id: 'javascript', label: 'JavaScript' },
-  { id: 'python', label: 'Python' },
-  { id: 'java', label: 'Java' },
-  { id: 'cpp', label: 'C++' },
-];
 
 const CURSOR_COLORS = [
   '#f97316', '#22c55e', '#3b82f6', '#e11d48',
@@ -41,7 +35,6 @@ const App = () => {
   const [userName, setUserName] = useState("");
   const [roomPassword, setRoomPassword] = useState("");
   const [joinError, setJoinError] = useState("");
-  const [language, setLanguage] = useState("javascript");
   const [users, setUsers] = useState([]);
   const [typing, setTyping] = useState("");
   const [copySuccess, setCopySuccess] = useState("");
@@ -54,6 +47,13 @@ const App = () => {
   const [connected, setConnected] = useState(socket.connected);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [consoleOpen, setConsoleOpen] = useState(true);
+
+  // Every path in the room, mirrored out of the CRDT for rendering.
+  const [filePaths, setFilePaths] = useState([]);
+  // Which file *this* user is looking at. Deliberately not in the CRDT — sharing
+  // it would drag everyone onto the same file and defeat the point.
+  const [activePath, setActivePath] = useState("");
+  const [editorReady, setEditorReady] = useState(false);
 
   // The CRDT document is rebuilt per room — reusing one across rooms would merge
   // the previous room's content into the new one.
@@ -101,43 +101,43 @@ const App = () => {
       socket.emit('awareness', encodeAwarenessUpdate(awareness, changed));
     });
 
-    // The active language lives in the CRDT too, so it syncs to everyone and
-    // persists with the snapshot — a late joiner gets the right language, not just
-    // the right code.
-    ydoc.getMap('meta').observe(() => {
-      const next = ydoc.getMap('meta').get('language');
-      if (next) setLanguage(next);
-    });
+    // Mirror the file list into React state. The map is empty until ySync lands,
+    // so this fires again once the server's document arrives.
+    const files = ydoc.getMap('files');
+    const readPaths = () => setFilePaths([...files.keys()].sort());
+    files.observe(readPaths);
+    readPaths();
 
     docRef.current = { ydoc, awareness };
     return docRef.current;
   }, []);
 
-  // Point the editor at the Y.Text for the active language.
-  const bindLanguage = useCallback((lang) => {
+  // Point the editor at the Y.Text for one file.
+  const bindPath = useCallback((filePath) => {
     const doc = docRef.current;
     const editor = editorRef.current;
     const monaco = monacoRef.current;
     if (!doc || !editor || !monaco) return;
 
-    // A stale binding would keep writing edits into the previous language's text.
+    // A stale binding would keep writing edits into the previously bound file.
     bindingRef.current?.destroy();
     bindingRef.current = null;
 
-    // The server seeds every language. Creating one here would race that seed and
-    // leave this editor bound to an orphaned Y.Text.
-    const files = doc.ydoc.getMap('files');
-    const ytext = files.get(lang);
+    // Never create the Y.Text here: it would race the server's seed and leave this
+    // editor bound to a document the real one then orphans.
+    const ytext = doc.ydoc.getMap('files').get(filePath);
     if (!ytext) return;
 
-    let model = modelsRef.current[lang];
+    let model = modelsRef.current[filePath];
     if (!model || model.isDisposed()) {
       // Start empty and let the binding fill it, so content is never inserted twice.
-      model = monaco.editor.createModel('', lang);
-      modelsRef.current[lang] = model;
+      model = monaco.editor.createModel('', languageForPath(filePath) || 'plaintext');
+      modelsRef.current[filePath] = model;
     }
     editor.setModel(model);
 
+    // y-monaco encodes remote cursors as Yjs relative positions, which carry the
+    // type they belong to, so cursors belonging to other files are ignored here.
     bindingRef.current = new MonacoBinding(ytext, model, new Set([editor]), doc.awareness);
   }, []);
 
@@ -226,9 +226,27 @@ const App = () => {
     };
   }, [teardown]);
 
+  // Land on a real file, and move off one that someone else has deleted.
   useEffect(() => {
-    if (joined && synced) bindLanguage(language);
-  }, [joined, synced, language, bindLanguage]);
+    if (!synced || filePaths.length === 0) return;
+    if (!activePath || !filePaths.includes(activePath)) setActivePath(filePaths[0]);
+  }, [synced, filePaths, activePath]);
+
+  useEffect(() => {
+    if (joined && synced && editorReady && activePath) bindPath(activePath);
+  }, [joined, synced, editorReady, activePath, bindPath]);
+
+  // Monaco models are not garbage collected, so deleted files must be disposed.
+  // The bound model is left alone; it is released on the render after activePath
+  // has moved somewhere valid.
+  useEffect(() => {
+    const known = new Set(filePaths);
+    Object.entries(modelsRef.current).forEach(([filePath, model]) => {
+      if (known.has(filePath) || filePath === activePath) return;
+      if (!model.isDisposed()) model.dispose();
+      delete modelsRef.current[filePath];
+    });
+  }, [filePaths, activePath]);
 
   // y-monaco renders remote cursors via per-client CSS classes, so the colours and
   // name labels have to be injected as real stylesheet rules.
@@ -280,6 +298,8 @@ const App = () => {
 
     setJoinError("");
     setSynced(false);
+    setFilePaths([]);
+    setActivePath("");
     teardown();
     const { awareness } = createDoc(userName);
     roomIdRef.current = roomId;
@@ -303,7 +323,9 @@ const App = () => {
     setUsers([]);
     setTyping("");
     setOutPut("");
-    setLanguage("javascript");
+    setFilePaths([]);
+    setActivePath("");
+    setEditorReady(false);
   };
 
   const copyRoomId = () => {
@@ -327,43 +349,37 @@ const App = () => {
       socket.emit("typing", { roomId: roomIdRef.current, userName: userNameRef.current });
     });
 
-    bindLanguage(language);
+    // Binding is driven by an effect: mount order and sync order both vary, and a
+    // flag lets whichever finishes last trigger the bind.
+    setEditorReady(true);
   };
 
   // Replace the active document in one transaction, so the room receives a single
   // CRDT update rather than a burst, and every participant sees the imported file.
-  const importIntoEditor = useCallback(({ text, language: fileLanguage }) => {
+  const importIntoEditor = useCallback(({ path: filePath, text }) => {
     const doc = docRef.current;
-    if (!doc) return;
-
-    const target = fileLanguage
-      || doc.ydoc.getMap('meta').get('language')
-      || 'javascript';
+    if (!doc || !filePath) return;
 
     doc.ydoc.transact(() => {
-      doc.ydoc.getMap('meta').set('language', target);
-      const ytext = doc.ydoc.getMap('files').get(target);
-      if (!ytext) return;
+      const files = doc.ydoc.getMap('files');
+      if (!files.has(filePath)) files.set(filePath, new Y.Text());
+
+      const ytext = files.get(filePath);
       ytext.delete(0, ytext.length);
       ytext.insert(0, text);
     });
+    setActivePath(filePath);
   }, []);
 
   // Read from the CRDT rather than React state, so a commit always reflects what
   // the room currently holds.
   const readCode = useCallback(() => {
     const doc = docRef.current;
-    if (!doc) return '';
-    const active = doc.ydoc.getMap('meta').get('language') || 'javascript';
-    return doc.ydoc.getMap('files').get(active)?.toString() ?? '';
-  }, []);
+    if (!doc || !activePath) return '';
+    return doc.ydoc.getMap('files').get(activePath)?.toString() ?? '';
+  }, [activePath]);
 
-  const handleLanguageChange = (e) => {
-    const next = e.target.value;
-    // Writing to the CRDT broadcasts the change; the observer updates local state.
-    docRef.current?.ydoc.getMap('meta').set('language', next);
-    setLanguage(next);
-  };
+  const activeLanguage = languageForPath(activePath);
 
   const runCode = () => {
     setIsExecuting(true);
@@ -371,7 +387,7 @@ const App = () => {
     setConsoleOpen(true);
     setOutPut("Executing...");
     // The server runs its own authoritative copy of the code.
-    socket.emit("compileCode", { roomId, input: userInput });
+    socket.emit("compileCode", { roomId, path: activePath, input: userInput });
   };
 
   if (!joined) {
@@ -452,14 +468,16 @@ const App = () => {
       <main className='editor-wrapper'>
         <div className='editor-toolbar'>
           <select
-            className='language-selector'
-            value={language}
-            onChange={handleLanguageChange}
+            className='file-selector'
+            value={activePath}
+            onChange={(e) => setActivePath(e.target.value)}
+            title='File to edit'
           >
-            {LANGUAGES.map(({ id, label }) => (
-              <option key={id} value={id}>{label}</option>
+            {filePaths.map((filePath) => (
+              <option key={filePath} value={filePath}>{filePath}</option>
             ))}
           </select>
+          <span className='language-badge'>{activeLanguage || 'text'}</span>
           <button
             className='console-toggle'
             onClick={() => setConsoleOpen((open) => !open)}
@@ -468,7 +486,12 @@ const App = () => {
           >
             {consoleOpen ? '▾' : '▸'} Console
           </button>
-          <button className='run-btn' onClick={runCode} disabled={isExecuting}>
+          <button
+            className='run-btn'
+            onClick={runCode}
+            disabled={isExecuting || !activeLanguage}
+            title={activeLanguage ? 'Run this file' : 'This file type cannot be run'}
+          >
             {isExecuting ? 'Executing…' : '▶ Execute'}
           </button>
         </div>

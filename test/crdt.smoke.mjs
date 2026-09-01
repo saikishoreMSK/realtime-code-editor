@@ -77,9 +77,10 @@ function connect({ roomId, userName, password }) {
     const client = {
         socket,
         ydoc,
-        code: (lang = 'javascript') => ydoc.getMap('files').get(lang).toString(),
-        ytext: (lang = 'javascript') => ydoc.getMap('files').get(lang),
-        language: () => ydoc.getMap('meta').get('language'),
+        code: (file = 'main.js') => ydoc.getMap('files').get(file).toString(),
+        ytext: (file = 'main.js') => ydoc.getMap('files').get(file),
+        paths: () => [...ydoc.getMap('files').keys()].sort(),
+        schema: () => ydoc.getMap('meta').get('schema'),
     };
 
     return new Promise((resolve, reject) => {
@@ -143,21 +144,121 @@ test('concurrent edits at the same offset both survive', async () => {
     }
 });
 
-test('active language syncs through the CRDT', async () => {
+test('edits to different files converge without bleeding into each other', async () => {
     const server = await startServer();
     try {
-        const roomId = `lang-${Date.now()}`;
+        const roomId = `files-${Date.now()}`;
         const alice = await connect({ roomId, userName: 'alice' });
         const bob = await connect({ roomId, userName: 'bob' });
         await settle(300);
 
-        bob.ydoc.getMap('meta').set('language', 'python');
-        await settle(400);
+        assert.deepEqual(alice.paths(), ['Main.java', 'main.cpp', 'main.js', 'main.py']);
 
-        assert.equal(alice.language(), 'python');
+        // Two users working in different files at the same time.
+        alice.ytext('main.js').insert(0, 'FROM_ALICE ');
+        bob.ytext('main.py').insert(0, 'FROM_BOB ');
+        await settle(600);
+
+        assert.ok(bob.code('main.js').includes('FROM_ALICE'), "alice's file did not reach bob");
+        assert.ok(alice.code('main.py').includes('FROM_BOB'), "bob's file did not reach alice");
+        assert.ok(!alice.code('main.js').includes('FROM_BOB'), 'edits crossed files');
 
         alice.socket.close();
         bob.socket.close();
+    } finally {
+        await stopServer(server);
+    }
+});
+
+test('creating and deleting a file propagates to the room', async () => {
+    const server = await startServer();
+    try {
+        const roomId = `crud-${Date.now()}`;
+        const alice = await connect({ roomId, userName: 'alice' });
+        const bob = await connect({ roomId, userName: 'bob' });
+        await settle(300);
+
+        alice.ydoc.transact(() => {
+            const files = alice.ydoc.getMap('files');
+            files.set('src/helper.js', new Y.Text());
+            files.get('src/helper.js').insert(0, 'export const x = 1;');
+        });
+        await settle(500);
+
+        assert.ok(bob.paths().includes('src/helper.js'), 'new file did not reach bob');
+        assert.equal(bob.code('src/helper.js'), 'export const x = 1;');
+
+        bob.ydoc.getMap('files').delete('src/helper.js');
+        await settle(500);
+
+        assert.ok(!alice.paths().includes('src/helper.js'), 'delete did not reach alice');
+
+        alice.socket.close();
+        bob.socket.close();
+    } finally {
+        await stopServer(server);
+    }
+});
+
+test('a language-keyed snapshot migrates onto file paths', async () => {
+    // Build the snapshot the pre-multi-file server would have written.
+    const legacy = new Y.Doc();
+    legacy.transact(() => {
+        const files = legacy.getMap('files');
+        files.set('javascript', new Y.Text());
+        files.get('javascript').insert(0, '// written before multi-file\n');
+        legacy.getMap('meta').set('language', 'javascript');
+    });
+
+    const roomId = `legacy-${Date.now()}`;
+    const file = path.join(
+        persistDir,
+        `${Buffer.from(roomId).toString('base64url')}.json`
+    );
+    await fs.writeFile(file, JSON.stringify({
+        state: Buffer.from(Y.encodeStateAsUpdate(legacy)).toString('base64'),
+        passwordHash: null,
+        updatedAt: new Date().toISOString(),
+    }));
+
+    const server = await startServer();
+    try {
+        const alice = await connect({ roomId, userName: 'alice' });
+        await settle(300);
+
+        assert.equal(alice.schema(), 2, 'schema was not stamped');
+        assert.ok(!alice.paths().includes('javascript'), 'legacy key survived');
+        assert.ok(
+            alice.code('main.js').includes('written before multi-file'),
+            'legacy content was lost'
+        );
+
+        alice.socket.close();
+    } finally {
+        await stopServer(server);
+    }
+});
+
+test('running a file that does not exist is reported', async () => {
+    const server = await startServer();
+    try {
+        const roomId = `missing-${Date.now()}`;
+        const alice = await connect({ roomId, userName: 'alice' });
+        await settle(200);
+
+        const responded = new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('no codeResponse')), 5000);
+            alice.socket.on('codeResponse', (payload) => {
+                clearTimeout(timer);
+                resolve(payload);
+            });
+        });
+
+        alice.socket.emit('compileCode', { roomId, path: 'nope.js', input: '' });
+        const payload = await responded;
+        assert.match(payload.run.output, /No such file: nope\.js/);
+
+        alice.socket.close();
     } finally {
         await stopServer(server);
     }
@@ -192,7 +293,7 @@ test('room content survives a server restart', async () => {
     let server = await startServer();
     try {
         const alice = await connect({ roomId, userName: 'alice' });
-        alice.ytext().insert(0, '// survives restart\n');
+        alice.ytext('main.js').insert(0, '// survives restart\n');
         saved = alice.code();
 
         // Long enough for the debounced flush to reach disk.

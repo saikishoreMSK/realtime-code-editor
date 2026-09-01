@@ -12,7 +12,13 @@ import path from 'path';
 import * as Y from 'yjs';
 import bcrypt from 'bcryptjs';
 import { loadRoom, saveRoom, persistenceMode } from './persistence.js';
-import { WANDBOX_COMPILERS, DEFAULT_SNIPPETS, prepareSource } from './languages.js';
+import {
+    WANDBOX_COMPILERS,
+    DEFAULT_FILES,
+    LEGACY_LANGUAGE_PATHS,
+    languageForPath,
+    prepareSource,
+} from './languages.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -26,6 +32,9 @@ const io = new Server(server, {
 // Overridable so tests don't have to wait out the production interval.
 const FLUSH_INTERVAL_MS = Number(process.env.FLUSH_INTERVAL_MS) || 5000;
 
+// Bumped when the document layout changes, so old snapshots can be migrated.
+const SCHEMA_VERSION = 2;
+
 /**
  * rooms: Map<roomId, {
  *   users: Map<socketId, userName>,
@@ -36,8 +45,11 @@ const FLUSH_INTERVAL_MS = Number(process.env.FLUSH_INTERVAL_MS) || 5000;
  * }>
  *
  * The Y.Doc holds:
- *   files: Y.Map<string, Y.Text>   keyed by language today, by file path in future
- *   meta:  Y.Map                   { language }
+ *   files: Y.Map<path, Y.Text>   one document per file, keyed by path
+ *   meta:  Y.Map                 { schema }
+ *
+ * Which file a user is looking at is deliberately NOT in here: it is per-user
+ * state, so that two people can work in different files at once.
  */
 const rooms = new Map();
 
@@ -45,17 +57,43 @@ const rooms = new Map();
 // own Y.Doc and one would silently win. In-flight loads are memoised to prevent that.
 const pendingRooms = new Map();
 
+// Rooms created before multi-file keyed their buffers by language name. Without
+// this an existing snapshot would look empty and get re-seeded, losing the code.
+function migrateLanguageKeys(ydoc) {
+    const files = ydoc.getMap('files');
+
+    for (const [language, filePath] of Object.entries(LEGACY_LANGUAGE_PATHS)) {
+        const legacy = files.get(language);
+        if (!legacy || files.has(filePath)) continue;
+
+        // Yjs has no move, so the text is copied to the new key and the old one dropped.
+        const text = legacy.toString();
+        files.delete(language);
+        files.set(filePath, new Y.Text());
+        files.get(filePath).insert(0, text);
+    }
+    ydoc.getMap('meta').delete('language');
+}
+
 function seedRoom(ydoc) {
     const files = ydoc.getMap('files');
     const meta = ydoc.getMap('meta');
 
-    for (const [language, code] of Object.entries(DEFAULT_SNIPPETS)) {
-        if (!files.has(language)) {
-            files.set(language, new Y.Text());
-            files.get(language).insert(0, code);
+    ydoc.transact(() => {
+        if (meta.get('schema') !== SCHEMA_VERSION) {
+            migrateLanguageKeys(ydoc);
+            meta.set('schema', SCHEMA_VERSION);
         }
-    }
-    if (!meta.get('language')) meta.set('language', 'javascript');
+
+        // Only a genuinely empty room gets defaults. Re-seeding a room whose files
+        // were all deleted would resurrect them on every load.
+        if (files.size === 0) {
+            for (const [filePath, code] of Object.entries(DEFAULT_FILES)) {
+                files.set(filePath, new Y.Text());
+                files.get(filePath).insert(0, code);
+            }
+        }
+    });
 }
 
 function getRoom(roomId) {
@@ -196,24 +234,45 @@ io.on('connection', (socket) => {
     socket.on('leaveRoom', detach);
 
     // Wandbox pins its own runtime versions, so no client-supplied version is used.
-    socket.on('compileCode', async ({ roomId, input }) => {
+    socket.on('compileCode', async ({ roomId, path: entryPath, input }) => {
         const room = rooms.get(roomId);
         if (!room) return;
 
+        // Output goes only to the requester. Now that each user picks their own
+        // file, broadcasting would let one person's run overwrite another's console
+        // while they were still reading it.
         const sendOutput = (output) => {
-            io.to(roomId).emit('codeResponse', { run: { output } });
+            socket.emit('codeResponse', { run: { output, path: entryPath } });
         };
 
-        // Execute the server's authoritative copy, not text supplied by the client.
-        const language = room.ydoc.getMap('meta').get('language') || 'javascript';
-        const raw = room.ydoc.getMap('files').get(language)?.toString() ?? '';
-        const code = prepareSource(language, raw);
-
-        const target = WANDBOX_COMPILERS[language];
-        if (!target) {
-            sendOutput(`Unsupported language: ${language}`);
+        const files = room.ydoc.getMap('files');
+        const entry = files.get(entryPath);
+        if (!entry) {
+            sendOutput(`No such file: ${entryPath}`);
             return;
         }
+
+        const language = languageForPath(entryPath);
+        const target = language && WANDBOX_COMPILERS[language];
+        if (!target) {
+            sendOutput(`Cannot run ${entryPath} — no runtime for this file type.`);
+            return;
+        }
+
+        // Execute the server's authoritative copy, not text supplied by the client.
+        const code = prepareSource(language, entry.toString());
+
+        // Same-language siblings ride along so includes and imports can resolve.
+        // Wandbox's filesystem is flat, so paths collapse to their basename; the
+        // first file to claim a name wins.
+        const siblings = new Map();
+        files.forEach((text, filePath) => {
+            if (filePath === entryPath) return;
+            if (languageForPath(filePath) !== language) return;
+
+            const name = filePath.split('/').pop();
+            if (!siblings.has(name)) siblings.set(name, text.toString());
+        });
 
         try {
             const response = await axios.post(
@@ -223,6 +282,9 @@ io.on('connection', (socket) => {
                     compiler: target.compiler,
                     options: target.options || '',
                     stdin: input || '',
+                    ...(siblings.size > 0
+                        ? { codes: [...siblings].map(([file, body]) => ({ file, code: body })) }
+                        : {}),
                 },
                 { timeout: 30000 }
             );

@@ -2,7 +2,7 @@
 // every submission to prog.java while javac demands a matching filename.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { prepareSource } from '../backend/languages.js';
+import { languageForPath, prepareSource } from '../backend/languages.js';
 
 test('drops public from a top-level Java class', () => {
     const out = prepareSource('java', 'public class Main {\n}');
@@ -39,4 +39,22 @@ test('other languages pass through untouched', () => {
     const py = 'print("Hello World")';
     assert.equal(prepareSource('python', py), py);
     assert.equal(prepareSource('javascript', 'console.log(1)'), 'console.log(1)');
+});
+
+test('maps file extensions to runnable languages', () => {
+    assert.equal(languageForPath('main.js'), 'javascript');
+    assert.equal(languageForPath('src/app.jsx'), 'javascript');
+    assert.equal(languageForPath('main.py'), 'python');
+    assert.equal(languageForPath('Main.java'), 'java');
+    assert.equal(languageForPath('main.cpp'), 'cpp');
+    assert.equal(languageForPath('lib/helper.hpp'), 'cpp');
+});
+
+test('extension matching ignores case and rejects unknown types', () => {
+    assert.equal(languageForPath('Main.JAVA'), 'java');
+    assert.equal(languageForPath('README.md'), null);
+    assert.equal(languageForPath('logo.png'), null);
+    assert.equal(languageForPath('Makefile'), null, 'a file with no extension is not runnable');
+    assert.equal(languageForPath(''), null);
+    assert.equal(languageForPath(undefined), null);
 });

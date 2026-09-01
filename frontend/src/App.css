@@ -199,8 +199,9 @@ body {
 }
 
 
-/* Language dropdown — a document control, so it lives in the editor toolbar. */
-.language-selector {
+/* File picker — a document control, so it lives in the editor toolbar. */
+.file-selector {
+  max-width: 320px;
   padding: 6px 10px;
   border-radius: 6px;
   border: none;
@@ -209,6 +210,17 @@ body {
   color: #6a0dad;
   font-weight: 600;
   cursor: pointer;
+}
+
+/* Language is derived from the extension, so it is shown rather than chosen. */
+.language-badge {
+  padding: 3px 8px;
+  border: 1px solid #4b2e63;
+  border-radius: 999px;
+  color: #d8c7e8;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 /* Leave button */
