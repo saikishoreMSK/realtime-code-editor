@@ -1,6 +1,6 @@
 import './App.css'
 import io from 'socket.io-client';
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import Editor from '@monaco-editor/react';
 import * as Y from 'yjs';
 import {
@@ -11,7 +11,9 @@ import {
 } from 'y-protocols/awareness';
 import { MonacoBinding } from 'y-monaco';
 import GitHubPanel from './components/GitHubPanel';
+import FilesPanel from './components/FilesPanel';
 import { languageForPath } from './github';
+import { buildTree } from './tree';
 
 const socket = io();
 
@@ -28,6 +30,23 @@ const colorFor = (name) => {
 };
 
 const TYPING_THROTTLE_MS = 1000;
+
+// Paths come from a text box, so they are normalised before becoming CRDT keys.
+const normalizePath = (raw) => String(raw ?? '')
+  .trim()
+  .replace(/\\/g, '/')
+  .replace(/\/{2,}/g, '/')
+  .replace(/^\/+|\/+$/g, '');
+
+const assertUsable = (candidate) => {
+  if (!candidate) throw new Error('Enter a name.');
+  if (candidate.split('/').includes('..')) throw new Error('Paths cannot contain "..".');
+  if (candidate.length > 200) throw new Error('That path is too long.');
+};
+
+const parentOf = (candidate) => (
+  candidate.includes('/') ? candidate.slice(0, candidate.lastIndexOf('/')) : ''
+);
 
 const App = () => {
   const [joined, setJoined] = useState(false);
@@ -54,6 +73,10 @@ const App = () => {
   // it would drag everyone onto the same file and defeat the point.
   const [activePath, setActivePath] = useState("");
   const [editorReady, setEditorReady] = useState(false);
+  // Folders are implied by file paths; these are the ones that hold nothing yet.
+  const [folderPaths, setFolderPaths] = useState([]);
+  // path -> everyone else currently looking at it, from awareness.
+  const [viewers, setViewers] = useState({});
 
   // The CRDT document is rebuilt per room — reusing one across rooms would merge
   // the previous room's content into the new one.
@@ -107,6 +130,11 @@ const App = () => {
     const readPaths = () => setFilePaths([...files.keys()].sort());
     files.observe(readPaths);
     readPaths();
+
+    const folders = ydoc.getMap('folders');
+    const readFolders = () => setFolderPaths([...folders.keys()].sort());
+    folders.observe(readFolders);
+    readFolders();
 
     docRef.current = { ydoc, awareness };
     return docRef.current;
@@ -236,6 +264,40 @@ const App = () => {
     if (joined && synced && editorReady && activePath) bindPath(activePath);
   }, [joined, synced, editorReady, activePath, bindPath]);
 
+  // Tell the room which file we're in, so the tree can show who is where.
+  useEffect(() => {
+    const doc = docRef.current;
+    if (!doc || !joined || !synced) return;
+
+    const user = doc.awareness.getLocalState()?.user;
+    if (!user) return;
+    doc.awareness.setLocalStateField('user', { ...user, path: activePath });
+  }, [joined, synced, activePath]);
+
+  useEffect(() => {
+    if (!joined) return;
+    const doc = docRef.current;
+    if (!doc) return;
+
+    const readViewers = () => {
+      const byPath = {};
+      doc.awareness.getStates().forEach((state, clientId) => {
+        // Only other people count — a badge on your own file says nothing.
+        if (clientId === doc.awareness.clientID) return;
+        const user = state.user;
+        if (!user?.path) return;
+
+        if (!byPath[user.path]) byPath[user.path] = [];
+        byPath[user.path].push({ name: user.name, color: user.color });
+      });
+      setViewers(byPath);
+    };
+
+    readViewers();
+    doc.awareness.on('change', readViewers);
+    return () => doc.awareness.off('change', readViewers);
+  }, [joined]);
+
   // Monaco models are not garbage collected, so deleted files must be disposed.
   // The bound model is left alone; it is released on the render after activePath
   // has moved somewhere valid.
@@ -299,7 +361,9 @@ const App = () => {
     setJoinError("");
     setSynced(false);
     setFilePaths([]);
+    setFolderPaths([]);
     setActivePath("");
+    setViewers({});
     teardown();
     const { awareness } = createDoc(userName);
     roomIdRef.current = roomId;
@@ -324,7 +388,9 @@ const App = () => {
     setTyping("");
     setOutPut("");
     setFilePaths([]);
+    setFolderPaths([]);
     setActivePath("");
+    setViewers({});
     setEditorReady(false);
   };
 
@@ -378,6 +444,106 @@ const App = () => {
     if (!doc || !activePath) return '';
     return doc.ydoc.getMap('files').get(activePath)?.toString() ?? '';
   }, [activePath]);
+
+  const createFile = useCallback((raw) => {
+    const doc = docRef.current;
+    if (!doc) throw new Error('Not connected to the room yet.');
+
+    const filePath = normalizePath(raw);
+    assertUsable(filePath);
+
+    const files = doc.ydoc.getMap('files');
+    if (files.has(filePath)) throw new Error(`${filePath} already exists.`);
+
+    doc.ydoc.transact(() => {
+      files.set(filePath, new Y.Text());
+      // The folder is implied by the path now, so its placeholder is redundant.
+      const parent = parentOf(filePath);
+      if (parent) doc.ydoc.getMap('folders').delete(parent);
+    });
+    setActivePath(filePath);
+  }, []);
+
+  const createFolder = useCallback((raw) => {
+    const doc = docRef.current;
+    if (!doc) throw new Error('Not connected to the room yet.');
+
+    const dirPath = normalizePath(raw);
+    assertUsable(dirPath);
+
+    const folders = doc.ydoc.getMap('folders');
+    const implied = [...doc.ydoc.getMap('files').keys()]
+      .some((filePath) => filePath.startsWith(`${dirPath}/`));
+    if (implied || folders.has(dirPath)) throw new Error(`${dirPath} already exists.`);
+
+    // Only empty folders are recorded. Once a file lives inside one, the path
+    // implies it — the same way git declines to track empty directories.
+    folders.set(dirPath, true);
+  }, []);
+
+  const renameFile = useCallback((from, raw) => {
+    const doc = docRef.current;
+    if (!doc) throw new Error('Not connected to the room yet.');
+
+    const to = normalizePath(raw);
+    assertUsable(to);
+    if (to === from) return;
+
+    const files = doc.ydoc.getMap('files');
+    if (!files.has(from)) throw new Error(`${from} no longer exists.`);
+    if (files.has(to)) throw new Error(`${to} already exists.`);
+
+    // Yjs cannot move a type between keys, so the text is copied. Two people
+    // renaming the same file at the same instant would therefore end up with two.
+    const body = files.get(from).toString();
+    doc.ydoc.transact(() => {
+      files.set(to, new Y.Text());
+      files.get(to).insert(0, body);
+      files.delete(from);
+
+      const parent = parentOf(to);
+      if (parent) doc.ydoc.getMap('folders').delete(parent);
+    });
+    setActivePath(to);
+  }, []);
+
+  const deleteFile = useCallback((filePath) => {
+    const doc = docRef.current;
+    if (!doc) throw new Error('Not connected to the room yet.');
+
+    const files = doc.ydoc.getMap('files');
+    if (!files.has(filePath)) throw new Error(`${filePath} no longer exists.`);
+    // An empty room would leave every editor with nothing to bind to.
+    if (files.size <= 1) throw new Error('A room needs at least one file.');
+
+    doc.ydoc.transact(() => {
+      files.delete(filePath);
+
+      // Removing the last file in a folder would make the folder vanish too, so
+      // it becomes an explicit empty one instead.
+      const parent = parentOf(filePath);
+      const stillUsed = [...files.keys()]
+        .some((other) => other.startsWith(`${parent}/`));
+      if (parent && !stillUsed) doc.ydoc.getMap('folders').set(parent, true);
+    });
+  }, []);
+
+  const removeFolder = useCallback((dirPath) => {
+    const doc = docRef.current;
+    if (!doc) throw new Error('Not connected to the room yet.');
+
+    const occupied = [...doc.ydoc.getMap('files').keys()]
+      .some((filePath) => filePath.startsWith(`${dirPath}/`));
+    if (occupied) throw new Error(`${dirPath} still has files in it.`);
+
+    doc.ydoc.getMap('folders').delete(dirPath);
+  }, []);
+
+  // Explicit empty folders and the folders implied by file paths render as one tree.
+  const roomTree = useMemo(() => buildTree([
+    ...folderPaths.map((dirPath) => ({ path: dirPath, type: 'tree' })),
+    ...filePaths.map((filePath) => ({ path: filePath, type: 'blob' })),
+  ]), [filePaths, folderPaths]);
 
   const activeLanguage = languageForPath(activePath);
 
@@ -452,6 +618,20 @@ const App = () => {
             ))}
           </ul>
           <p className='typing-indicator'>{typing}</p>
+
+          <FilesPanel
+            nodes={roomTree}
+            activePath={activePath}
+            viewers={viewers}
+            fileCount={filePaths.length}
+            onSelect={setActivePath}
+            onCreateFile={createFile}
+            onCreateFolder={createFolder}
+            onRename={renameFile}
+            onDelete={deleteFile}
+            onRemoveFolder={removeFolder}
+            disabled={!synced}
+          />
 
           <GitHubPanel
             onOpenFile={importIntoEditor}
