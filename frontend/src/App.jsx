@@ -445,6 +445,31 @@ const App = () => {
     return doc.ydoc.getMap('files').get(activePath)?.toString() ?? '';
   }, [activePath]);
 
+  // A bulk import writes every file in one transaction, so the room receives a
+  // single CRDT update rather than one per file.
+  const importManyIntoEditor = useCallback((incoming) => {
+    const doc = docRef.current;
+    if (!doc || !incoming?.length) return;
+
+    doc.ydoc.transact(() => {
+      const files = doc.ydoc.getMap('files');
+      const folders = doc.ydoc.getMap('folders');
+
+      for (const { path: filePath, text } of incoming) {
+        if (!files.has(filePath)) files.set(filePath, new Y.Text());
+
+        const ytext = files.get(filePath);
+        ytext.delete(0, ytext.length);
+        ytext.insert(0, text);
+
+        // The folder is implied by the path now, so its placeholder is redundant.
+        const parent = parentOf(filePath);
+        if (parent) folders.delete(parent);
+      }
+    });
+    setActivePath(incoming[0].path);
+  }, []);
+
   const createFile = useCallback((raw) => {
     const doc = docRef.current;
     if (!doc) throw new Error('Not connected to the room yet.');
@@ -635,6 +660,7 @@ const App = () => {
 
           <GitHubPanel
             onOpenFile={importIntoEditor}
+            onImportMany={importManyIntoEditor}
             getCode={readCode}
             disabled={!synced}
           />

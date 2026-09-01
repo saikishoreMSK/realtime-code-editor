@@ -19,6 +19,23 @@ const API_VERSION = '2022-11-28';
 /** Contents API refuses to inline anything larger, and huge files are useless here. */
 export const MAX_IMPORT_BYTES = 512 * 1024;
 
+// Importing costs one API call per file against a 60/hour unauthenticated budget,
+// so a bulk import is capped rather than allowed to drain it on one repository.
+export const MAX_IMPORT_FILES = 25;
+
+// Fetched in parallel, but not so many that we look like an attack.
+const IMPORT_CONCURRENCY = 4;
+
+// Directories that would exhaust the file budget without contributing source.
+const SKIPPED_DIRECTORIES = new Set([
+    'node_modules', 'dist', 'build', 'out', 'vendor', 'coverage',
+    '.git', '.next', '.cache', '__pycache__', 'target',
+]);
+
+export function isSkippedPath(filePath) {
+    return String(filePath).split('/').some((part) => SKIPPED_DIRECTORIES.has(part));
+}
+
 export class GitHubError extends Error {
     constructor(message, { status, remaining } = {}) {
         super(message);
@@ -166,6 +183,44 @@ export async function getFile({ owner, repo, path, ref, token }) {
         );
     }
     return { text: decodeBase64(data.content), sha: data.sha, remaining };
+}
+
+/**
+ * Read many files at once. Individual failures are collected rather than thrown,
+ * so one unreadable file cannot abandon an otherwise good import.
+ */
+export async function getFiles({ owner, repo, ref, token, paths, onProgress }) {
+    const loaded = [];
+    const failed = [];
+    let remaining = null;
+    let cursor = 0;
+    let done = 0;
+
+    const worker = async () => {
+        while (cursor < paths.length) {
+            const filePath = paths[cursor];
+            cursor += 1;
+
+            try {
+                const file = await getFile({ owner, repo, path: filePath, ref, token });
+                loaded.push({ path: filePath, text: file.text, sha: file.sha });
+                if (file.remaining != null) remaining = file.remaining;
+            } catch (err) {
+                failed.push({ path: filePath, message: err.message });
+            }
+
+            done += 1;
+            onProgress?.(done, paths.length);
+        }
+    };
+
+    await Promise.all(
+        Array.from({ length: Math.min(IMPORT_CONCURRENCY, paths.length) }, worker)
+    );
+
+    // Workers finish out of order; sort so the caller sees a stable list.
+    loaded.sort((a, b) => a.path.localeCompare(b.path));
+    return { loaded, failed, remaining };
 }
 
 export async function putFile({ owner, repo, path, message, text, branch, sha, token }) {

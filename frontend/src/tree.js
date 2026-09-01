@@ -58,3 +58,18 @@ export function buildTree(entries) {
 
     return root.children;
 }
+
+/** Depth-first list of the file nodes in a tree, in the order they render. */
+export function flattenFiles(nodes) {
+    const found = [];
+
+    const walk = (list) => {
+        for (const node of list) {
+            if (node.type === 'tree') walk(node.children);
+            else found.push(node);
+        }
+    };
+    walk(nodes ?? []);
+
+    return found;
+}

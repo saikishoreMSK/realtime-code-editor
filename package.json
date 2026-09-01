@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "node --test test/crdt.smoke.mjs test/github.test.mjs test/languages.test.mjs",
+    "test": "node --test test/*.mjs",
     "start": "node --env-file-if-exists=.env backend/index.js",
     "dev": "nodemon --exec \"node --env-file-if-exists=.env\" backend/index.js",
     "build": "npm install --include=dev && cd frontend && npm install --include=dev && npm run build"

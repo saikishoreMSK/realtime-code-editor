@@ -3,23 +3,27 @@ import FileTree from './FileTree';
 import InfoPopover from './InfoPopover';
 import {
     MAX_IMPORT_BYTES,
+    MAX_IMPORT_FILES,
     createBranch,
     createPullRequest,
     getFile,
+    getFiles,
     getRepo,
     getTree,
+    isSkippedPath,
     languageForPath,
     listCommits,
     parseRepo,
     putFile,
 } from '../github';
+import { flattenFiles } from '../tree';
 
 // sessionStorage, not localStorage: the token should not outlive the tab.
 const TOKEN_KEY = 'rce.github.token';
 
 const slugify = (value) => String(value).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
 
-const GitHubPanel = ({ onOpenFile, getCode, disabled }) => {
+const GitHubPanel = ({ onOpenFile, onImportMany, getCode, disabled }) => {
     const [token, setToken] = useState('');
     const [repoInput, setRepoInput] = useState('');
     const [target, setTarget] = useState(null);
@@ -107,6 +111,54 @@ const GitHubPanel = ({ onOpenFile, getCode, disabled }) => {
         });
         setNotice(`Opened ${node.path} — visible to everyone in the room`);
         return file;
+    });
+
+    const importAll = () => run('Importing', async () => {
+        if (disabled) throw new Error('Waiting for the room to sync — try again in a moment.');
+        if (!target) throw new Error('Load a repository first.');
+
+        const candidates = flattenFiles(nodes)
+            .filter((node) => languageForPath(node.path))
+            .filter((node) => node.size <= MAX_IMPORT_BYTES)
+            .filter((node) => !isSkippedPath(node.path))
+            .map((node) => node.path);
+
+        if (candidates.length === 0) {
+            throw new Error('Nothing in this repository can be opened here.');
+        }
+        if (candidates.length > MAX_IMPORT_FILES) {
+            throw new Error(
+                `${candidates.length} importable files exceeds the limit of `
+                + `${MAX_IMPORT_FILES}. Open individual files instead.`
+            );
+        }
+
+        const result = await getFiles({
+            ...target,
+            ref: branch,
+            token,
+            paths: candidates,
+            onProgress: (done, total) => setBusy(`Importing ${done}/${total}`),
+        });
+
+        if (result.loaded.length === 0) {
+            throw new Error(result.failed[0]?.message ?? 'Nothing could be read.');
+        }
+
+        onImportMany(result.loaded);
+
+        const first = result.loaded[0];
+        setActivePath(first.path);
+        setActiveSha(first.sha);
+        setCommitPath(first.path);
+        setCommitMessage(`Update ${first.path.split('/').pop()}`);
+        setPrTitle(`Update ${first.path.split('/').pop()}`);
+
+        const unread = result.failed.length
+            ? ` ${result.failed.length} could not be read.`
+            : '';
+        setNotice(`Imported ${result.loaded.length} files into the room.${unread}`);
+        return result;
     });
 
     const commit = () => run('Committing', async () => {
@@ -264,6 +316,18 @@ const GitHubPanel = ({ onOpenFile, getCode, disabled }) => {
                         <p className='gh-hint'>
                             Repository is large — GitHub truncated the file list.
                         </p>
+                    )}
+
+                    {nodes.length > 0 && (
+                        <>
+                            <button type='button' onClick={importAll} disabled={!!busy}>
+                                Import all supported files
+                            </button>
+                            <p className='gh-hint'>
+                                One API call per file, up to {MAX_IMPORT_FILES}. Build
+                                output and dependency folders are skipped.
+                            </p>
+                        </>
                     )}
 
                     {nodes.length > 0 && (
