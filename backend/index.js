@@ -295,8 +295,24 @@ io.on('connection', (socket) => {
                 .filter(Boolean).join('').trim();
             sendOutput(output || '(no output)');
         } catch (err) {
-            console.error('Compile failed:', err.response?.status, err.message);
-            sendOutput(`Execution failed: ${err.message}`);
+            const status = err.response?.status;
+            console.error('Compile failed:', status, err.message);
+
+            // A failure in the execution service and a failure in the user's code
+            // call for completely different reactions, so say which one happened.
+            if (status >= 500) {
+                sendOutput(
+                    `The execution service is currently failing (HTTP ${status}).
+`
+                    + `This is not a problem with your code — try again later.`
+                );
+            } else if (err.code === 'ECONNABORTED' || /timeout/i.test(err.message)) {
+                sendOutput('Execution timed out after 30 seconds.');
+            } else if (status) {
+                sendOutput(`The execution service rejected the request (HTTP ${status}).`);
+            } else {
+                sendOutput(`Could not reach the execution service: ${err.message}`);
+            }
         }
     });
 
